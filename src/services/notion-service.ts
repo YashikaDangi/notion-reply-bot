@@ -1,4 +1,4 @@
-import { Client } from "@notionhq/client";
+import { createNotionClient } from "./notion-oauth-service";
 
 interface Reply {
   pageId: string;
@@ -14,14 +14,14 @@ export async function fetchUnrepliedComments(
   limit: number = 50
 ): Promise<any[]> {
   try {
-    const apiKey = process.env.NOTION_API_KEY;
     const databaseId = process.env.NOTION_DATABASE_ID;
 
-    if (!apiKey || !databaseId) {
-      throw new Error("Notion API key or database ID not configured");
+    if (!databaseId) {
+      throw new Error("Notion database ID not configured");
     }
 
-    const notion = new Client({ auth: apiKey });
+    // Get authenticated Notion client through OAuth
+    const notion = await createNotionClient();
 
     // First, get the database to understand its structure
     console.log("Retrieving database structure...");
@@ -248,17 +248,15 @@ export async function fetchUnrepliedComments(
 // Update Notion entries with generated replies
 export async function updateNotionWithReplies(replies: Reply[]): Promise<any> {
   try {
-    const apiKey = process.env.NOTION_API_KEY;
     const databaseId = process.env.NOTION_DATABASE_ID;
 
-    if (!apiKey || !databaseId) {
-      throw new Error("Notion API key or database ID not configured");
+    if (!databaseId) {
+      throw new Error("Notion database ID not configured");
     }
 
+    // Get authenticated Notion client
     console.log("Initializing Notion client for updates...");
-    const notion = new Client({
-      auth: apiKey,
-    });
+    const notion = await createNotionClient();
 
     // First, get the database to understand its structure
     const database = await notion.databases.retrieve({

@@ -3,19 +3,10 @@ import {
   fetchUnrepliedComments,
   updateNotionWithReplies,
 } from "../services/notion-service";
-import { generateReplyWithGemini } from "../services/gemini-service";
+import { generateReplyWithDeepSeek } from "../services/deepseek-service";
 
 export const processUnrepliedRoute = Router();
 
-/**
- * Route to fetch unreplied comments from Notion, generate replies using Gemini,
- * and update the Notion database with the generated replies
- *
- * Request body:
- * {
- *   limit?: number        // Optional limit on number of comments to process (default: 10)
- * }
- */
 processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
   try {
     const { limit = 10 } = req.body;
@@ -32,13 +23,13 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
       });
     }
 
-    // Generate replies using Gemini
+    // Generate replies using DeepSeek
     const processedReplies = [];
 
     for (const comment of unrepliedComments) {
       try {
-        // Generate reply with Gemini
-        const generatedReply = await generateReplyWithGemini(
+        // Generate reply with DeepSeek
+        const generatedReply = await generateReplyWithDeepSeek(
           comment.comment,
           comment.username
         );
@@ -61,14 +52,16 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
 
     if (processedReplies.length === 0) {
       return res.status(500).json({
-        error: "Failed to generate any replies with Gemini AI",
+        error: "Failed to generate any replies with DeepSeek AI",
       });
     }
 
+    // Comment out the Notion update part to just verify fetching works
+    /* 
     // Update Notion entries with the generated replies
     const notionUpdateResults = await updateNotionWithReplies(processedReplies);
+    */
 
-    // Return the results
     return res.status(200).json({
       success: true,
       data: {
@@ -79,7 +72,8 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
           comment: reply.originalComment,
           generatedReply: reply.generatedReply,
         })),
-        notionUpdateResults,
+        // Comment out the notionUpdateResults in the response too
+        // notionUpdateResults,
       },
     });
   } catch (error: any) {
