@@ -2,16 +2,16 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.fetchUnrepliedComments = fetchUnrepliedComments;
 exports.updateNotionWithReplies = updateNotionWithReplies;
-const client_1 = require("@notionhq/client");
+const notion_oauth_service_1 = require("./notion-oauth-service");
 // Fetch unreplied comments from Notion
 async function fetchUnrepliedComments(limit = 50) {
     try {
-        const apiKey = process.env.NOTION_API_KEY;
         const databaseId = process.env.NOTION_DATABASE_ID;
-        if (!apiKey || !databaseId) {
-            throw new Error("Notion API key or database ID not configured");
+        if (!databaseId) {
+            throw new Error("Notion database ID not configured");
         }
-        const notion = new client_1.Client({ auth: apiKey });
+        // Get authenticated Notion client through OAuth
+        const notion = await (0, notion_oauth_service_1.createNotionClient)();
         // First, get the database to understand its structure
         console.log("Retrieving database structure...");
         const database = await notion.databases.retrieve({
@@ -189,15 +189,13 @@ async function fetchUnrepliedComments(limit = 50) {
 // Update Notion entries with generated replies
 async function updateNotionWithReplies(replies) {
     try {
-        const apiKey = process.env.NOTION_API_KEY;
         const databaseId = process.env.NOTION_DATABASE_ID;
-        if (!apiKey || !databaseId) {
-            throw new Error("Notion API key or database ID not configured");
+        if (!databaseId) {
+            throw new Error("Notion database ID not configured");
         }
+        // Get authenticated Notion client
         console.log("Initializing Notion client for updates...");
-        const notion = new client_1.Client({
-            auth: apiKey,
-        });
+        const notion = await (0, notion_oauth_service_1.createNotionClient)();
         // First, get the database to understand its structure
         const database = await notion.databases.retrieve({
             database_id: databaseId,

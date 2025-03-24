@@ -7,12 +7,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const process_unreplied_route_1 = require("./routes/process-unreplied-route");
+const auth_routes_1 = require("./routes/auth-routes");
 // Load environment variables
 dotenv_1.default.config();
 // Initialize Express app
 const app = (0, express_1.default)();
 app.use(express_1.default.json());
 // Initialize routes
+app.use("/auth", auth_routes_1.authRoutes);
 app.use("/process-unreplied", process_unreplied_route_1.processUnrepliedRoute);
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -27,6 +29,16 @@ app.use((err, req, res, next) => {
             help: "Please check that your Notion database has the required fields.",
         });
     }
+    // Check for authentication errors
+    if (err.message &&
+        (err.message.includes("access token expired") ||
+            err.message.includes("not authenticated"))) {
+        return res.status(401).json({
+            error: "Authentication error",
+            details: err.message,
+            help: "Please authenticate with Notion by visiting the /auth/login endpoint."
+        });
+    }
     // Default error response
     res.status(500).json({
         error: "An unexpected error occurred",
@@ -35,7 +47,7 @@ app.use((err, req, res, next) => {
 });
 // Default route
 app.get("/", (req, res) => {
-    res.send("Comment Reply Generator API - Using Gemini AI and Notion");
+    res.send("Comment Reply Generator API - Using DeepSeek AI and Notion OAuth");
 });
 // Start server
 const PORT = process.env.PORT || 3000;
@@ -43,10 +55,15 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
     // Display environment configuration status
     console.log("\nEnvironment Configuration:");
-    console.log(`- Gemini API: ${process.env.GEMINI_API_KEY ? "✅ Configured" : "❌ Not configured"}`);
-    console.log(`- Notion API: ${process.env.NOTION_API_KEY && process.env.NOTION_DATABASE_ID
-        ? "✅ Configured"
-        : "❌ Not configured or incomplete"}`);
+    console.log(`- DeepSeek API: ${process.env.DEEPSEEK_API_KEY ? "✅ Configured" : "❌ Not configured"}`);
+    const notionOAuthConfigured = process.env.NOTION_CLIENT_ID &&
+        process.env.NOTION_CLIENT_SECRET &&
+        process.env.NOTION_REDIRECT_URI;
+    console.log(`- Notion OAuth: ${notionOAuthConfigured ? "✅ Configured" : "❌ Not configured or incomplete"}`);
+    console.log(`- Notion Database ID: ${process.env.NOTION_DATABASE_ID ? "✅ Configured" : "❌ Not configured"}`);
     console.log("\nAvailable API Endpoints:");
-    console.log("- POST /process-unreplied: Fetch unreplied comments from Notion, generate replies with Gemini, and update Notion");
+    console.log("- GET /auth/login: Initiate Notion OAuth authentication flow");
+    console.log("- GET /auth/callback: Notion OAuth callback endpoint");
+    console.log("- GET /auth/status: Check authentication status");
+    console.log("- POST /process-unreplied: Fetch unreplied comments from Notion, generate replies with DeepSeek, and update Notion");
 });

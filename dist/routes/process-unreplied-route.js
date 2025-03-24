@@ -3,17 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.processUnrepliedRoute = void 0;
 const express_1 = require("express");
 const notion_service_1 = require("../services/notion-service");
-const gemini_service_1 = require("../services/gemini-service");
+const deepseek_service_1 = require("../services/deepseek-service");
 exports.processUnrepliedRoute = (0, express_1.Router)();
-/**
- * Route to fetch unreplied comments from Notion, generate replies using Gemini,
- * and update the Notion database with the generated replies
- *
- * Request body:
- * {
- *   limit?: number        // Optional limit on number of comments to process (default: 10)
- * }
- */
 exports.processUnrepliedRoute.post("/", async (req, res) => {
     try {
         const { limit = 10 } = req.body;
@@ -26,12 +17,12 @@ exports.processUnrepliedRoute.post("/", async (req, res) => {
                 hint: "Check that your Reply column exists and that some entries have empty replies",
             });
         }
-        // Generate replies using Gemini
+        // Generate replies using DeepSeek
         const processedReplies = [];
         for (const comment of unrepliedComments) {
             try {
-                // Generate reply with Gemini
-                const generatedReply = await (0, gemini_service_1.generateReplyWithGemini)(comment.comment, comment.username);
+                // Generate reply with DeepSeek
+                const generatedReply = await (0, deepseek_service_1.generateReplyWithDeepSeek)(comment.comment, comment.username);
                 processedReplies.push({
                     pageId: comment.pageId,
                     username: comment.username,
@@ -49,12 +40,11 @@ exports.processUnrepliedRoute.post("/", async (req, res) => {
         }
         if (processedReplies.length === 0) {
             return res.status(500).json({
-                error: "Failed to generate any replies with Gemini AI",
+                error: "Failed to generate any replies with DeepSeek AI",
             });
         }
         // Update Notion entries with the generated replies
         const notionUpdateResults = await (0, notion_service_1.updateNotionWithReplies)(processedReplies);
-        // Return the results
         return res.status(200).json({
             success: true,
             data: {
@@ -65,6 +55,7 @@ exports.processUnrepliedRoute.post("/", async (req, res) => {
                     comment: reply.originalComment,
                     generatedReply: reply.generatedReply,
                 })),
+                // Comment out the notionUpdateResults in the response too
                 notionUpdateResults,
             },
         });
