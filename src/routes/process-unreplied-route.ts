@@ -56,11 +56,8 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
       });
     }
 
-    // Comment out the Notion update part to just verify fetching works
-    /* 
     // Update Notion entries with the generated replies
     const notionUpdateResults = await updateNotionWithReplies(processedReplies);
-    */
 
     return res.status(200).json({
       success: true,
@@ -73,7 +70,7 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
           generatedReply: reply.generatedReply,
         })),
         // Comment out the notionUpdateResults in the response too
-        // notionUpdateResults,
+        notionUpdateResults,
       },
     });
   } catch (error: any) {
