@@ -9,9 +9,9 @@ export const processUnrepliedRoute = Router();
 
 processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
   try {
-    const { limit = 10 } = req.body;
+    const { limit } = req.body;
 
-    // Fetch unreplied comments from Notion
+    // Fetch unreplied comments from Notion - with or without limit
     const unrepliedComments = await fetchUnrepliedComments(limit);
 
     console.log(`Found ${unrepliedComments.length} unreplied comments`);
@@ -69,7 +69,6 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
           comment: reply.originalComment,
           generatedReply: reply.generatedReply,
         })),
-        // Comment out the notionUpdateResults in the response too
         notionUpdateResults,
       },
     });

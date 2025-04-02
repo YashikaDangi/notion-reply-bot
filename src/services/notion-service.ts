@@ -11,7 +11,7 @@ interface Reply {
 
 // Fetch unreplied comments from Notion
 export async function fetchUnrepliedComments(
-  limit: number = 50
+  limit?: number
 ): Promise<any[]> {
   try {
     const databaseId = process.env.NOTION_DATABASE_ID;
@@ -89,22 +89,51 @@ export async function fetchUnrepliedComments(
       }
     }
 
-    // Query all records first
-    console.log("Querying Notion for all comments...");
+    // Query all records - with or without limit
+    console.log(limit ? `Querying Notion for up to ${limit} comments...` : "Querying Notion for all comments...");
+    
     const queryOptions: any = {
       database_id: databaseId,
-      page_size: limit,
+      page_size: Math.min(limit || 100, 100), // Max 100 per request, respect limit if set
     };
 
-    const response = await notion.databases.query(queryOptions);
+    // Get all results by handling pagination
+    let allResults: any[] = [];
+    let response = await notion.databases.query(queryOptions);
+    allResults = allResults.concat(response.results);
+    
+    // Continue fetching if there are more results and we haven't hit the limit yet
+    while (response.has_more && response.next_cursor && (!limit || allResults.length < limit)) {
+      console.log("Fetching next page of results...");
+      queryOptions.start_cursor = response.next_cursor;
+      
+      // If we have a limit, adjust page_size for the last fetch to avoid getting too many
+      if (limit) {
+        const remaining = limit - allResults.length;
+        if (remaining <= 0) break;
+        queryOptions.page_size = Math.min(remaining, 100);
+      }
+      
+      response = await notion.databases.query(queryOptions);
+      allResults = allResults.concat(response.results);
+    }
+    
+    // If we have a limit, ensure we don't exceed it
+    if (limit && allResults.length > limit) {
+      allResults = allResults.slice(0, limit);
+    }
+    
+    // Replace response.results with our complete collection
+    response.results = allResults;
 
     console.log(
       `Retrieved ${response.results.length} total comments from Notion`
     );
 
-    // We'll manually filter for unreplied comments
+    // We'll collect all unreplied comments
     const unrepliedComments: any[] = [];
 
+    // Process all pages, checking each one for a reply
     for (const page of response.results) {
       try {
         // Cast page to any to access its properties
@@ -149,8 +178,10 @@ export async function fetchUnrepliedComments(
 
         console.log(`Needs reply: ${needsReply}`);
 
+        // If this comment doesn't need a reply, skip to the next one
         if (!needsReply) {
-          continue; // Skip this comment as it already has a reply
+          console.log(`Skipping page ${page.id}: already has a reply`);
+          continue; // Continue with the next comment
         }
 
         // Now extract the comment data
