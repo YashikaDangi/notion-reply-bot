@@ -9,10 +9,16 @@ interface Reply {
   createdTime?: string;
 }
 
-// Fetch unreplied comments from Notion
+interface CommentsResult {
+  comments: any[];
+  nextCursor: string | null;
+}
+
+// Fetch unreplied comments from Notion with pagination support
 export async function fetchUnrepliedComments(
-  limit?: number
-): Promise<any[]> {
+  batchSize: number = 25,
+  startCursor: string | null = null
+): Promise<CommentsResult> {
   try {
     const databaseId = process.env.NOTION_DATABASE_ID;
 
@@ -23,257 +29,229 @@ export async function fetchUnrepliedComments(
     // Get authenticated Notion client through OAuth
     const notion = await createNotionClient();
 
-    // First, get the database to understand its structure
-    console.log("Retrieving database structure...");
-    const database = await notion.databases.retrieve({
-      database_id: databaseId,
-    });
+    // First, get the database to understand its structure (only on first batch)
+    if (!startCursor) {
+      console.log("Retrieving database structure...");
+      const database = await notion.databases.retrieve({
+        database_id: databaseId,
+      });
 
-    // Identify field names in the database
-    const properties = (database as any).properties;
-    const propertyNames = Object.keys(properties);
-    console.log("Available fields in database:", propertyNames);
-
-    // Find the reply field name (with trimming to handle extra spaces)
-    let replyFieldName = null;
-
-    // First, check for exact matches with our common names
-    for (const name of propertyNames) {
-      const trimmedName = name.trim();
-      if (
-        trimmedName === "Reply" ||
-        trimmedName === "reply" ||
-        trimmedName === "Generated Reply" ||
-        trimmedName === "Responded" ||
-        trimmedName === "Response"
-      ) {
-        replyFieldName = name; // Use the original name with possible spaces
-        console.log(`Found reply field with exact match: "${replyFieldName}"`);
-        break;
-      }
+      // Identify field names in the database
+      const properties = (database as any).properties;
+      const propertyNames = Object.keys(properties);
+      console.log("Available fields in database:", propertyNames);
     }
 
-    // If no exact match, try a more flexible approach
-    if (!replyFieldName) {
-      for (const name of propertyNames) {
-        if (
-          name.toLowerCase().includes("reply") ||
-          name.toLowerCase().includes("response") ||
-          name.toLowerCase().includes("responded")
-        ) {
-          replyFieldName = name;
-          console.log(
-            `Found reply field with flexible match: "${replyFieldName}"`
-          );
-          break;
-        }
-      }
-    }
-
-    if (!replyFieldName) {
-      console.warn(
-        "No recognized reply field found in database. Using fallback logic."
-      );
-      // If we still can't find the field, just pick the one that looks most likely
-      for (const name of propertyNames) {
-        if (
-          name !== "Username" &&
-          name !== "Comment" &&
-          name !== "Account" &&
-          name !== "Created time"
-        ) {
-          replyFieldName = name;
-          console.log(`Using fallback reply field: "${replyFieldName}"`);
-          break;
-        }
-      }
-    }
-
-    // Query all records - with or without limit
-    console.log(limit ? `Querying Notion for up to ${limit} comments...` : "Querying Notion for all comments...");
-    
+    // Fetch a batch of comments
+    console.log(`Fetching batch of up to ${batchSize} comments${startCursor ? " with cursor" : ""}...`);
     const queryOptions: any = {
       database_id: databaseId,
-      page_size: Math.min(limit || 100, 100), // Max 100 per request, respect limit if set
+      page_size: batchSize,
     };
 
-    // Get all results by handling pagination
-    let allResults: any[] = [];
-    let response = await notion.databases.query(queryOptions);
-    allResults = allResults.concat(response.results);
-    
-    // Continue fetching if there are more results and we haven't hit the limit yet
-    while (response.has_more && response.next_cursor && (!limit || allResults.length < limit)) {
-      console.log("Fetching next page of results...");
-      queryOptions.start_cursor = response.next_cursor;
-      
-      // If we have a limit, adjust page_size for the last fetch to avoid getting too many
-      if (limit) {
-        const remaining = limit - allResults.length;
-        if (remaining <= 0) break;
-        queryOptions.page_size = Math.min(remaining, 100);
-      }
-      
-      response = await notion.databases.query(queryOptions);
-      allResults = allResults.concat(response.results);
+    if (startCursor) {
+      queryOptions.start_cursor = startCursor;
     }
-    
-    // If we have a limit, ensure we don't exceed it
-    if (limit && allResults.length > limit) {
-      allResults = allResults.slice(0, limit);
-    }
-    
-    // Replace response.results with our complete collection
-    response.results = allResults;
 
-    console.log(
-      `Retrieved ${response.results.length} total comments from Notion`
-    );
-
-    // We'll collect all unreplied comments
+    const response = await notion.databases.query(queryOptions);
+    
+    console.log(`Retrieved ${response.results.length} comments from Notion`);
+    
+    // Find the reply field name for each page
     const unrepliedComments: any[] = [];
-
-    // Process all pages, checking each one for a reply
-    for (const page of allResults) {
+    
+    for (const page of response.results) {
       try {
         // Cast page to any to access its properties
         const pageAny = page as any;
         const pageProperties = pageAny.properties;
-
-        // For debug
-        console.log(`Page ID: ${page.id}`);
-        console.log(
-          `Property names: ${Object.keys(pageProperties).join(", ")}`
-        );
-
-        // Check if the reply field exists and is empty
-        let needsReply = false;
-
-        if (replyFieldName && pageProperties[replyFieldName]) {
-          const replyProperty = pageProperties[replyFieldName];
-          console.log(`Reply field type: ${replyProperty.type}`);
-
-          if (replyProperty.type === "rich_text") {
-            // Consider it unreplied if the rich_text array is empty or undefined
-            needsReply =
-              !replyProperty.rich_text || replyProperty.rich_text.length === 0;
-            console.log(
-              `Rich text array length: ${
-                replyProperty.rich_text ? replyProperty.rich_text.length : 0
-              }`
-            );
-          } else if (replyProperty.type === "title") {
-            // Consider it unreplied if the title array is empty or undefined
-            needsReply =
-              !replyProperty.title || replyProperty.title.length === 0;
-          } else {
-            // For other field types, check if the value exists
-            needsReply = !replyProperty[replyProperty.type];
-          }
-        } else {
-          // If we can't find the reply field, assume it needs a reply
-          needsReply = true;
-          console.log(`Reply field not found in page properties`);
-        }
-
-        console.log(`Needs reply: ${needsReply}`);
-
+        
+        // Find the reply field name in this page
+        let replyFieldName = findReplyFieldName(pageProperties);
+        
+        // Check if the reply field is empty
+        let needsReply = checkIfNeedsReply(pageProperties, replyFieldName);
+        
+        // Debug info
+        console.log(`Page ID: ${page.id}, Needs reply: ${needsReply}`);
+        
         // If this comment doesn't need a reply, skip to the next one
         if (!needsReply) {
-          console.log(`Skipping page ${page.id}: already has a reply`);
-          continue; // Continue with the next comment
-        }
-
-        // Now extract the comment data
-        let commentText = "";
-        let username = "";
-        let account = "";
-        let createdTime = "";
-
-        // Try to find the comment text
-        if (pageProperties["Comment"] && pageProperties["Comment"].rich_text) {
-          const richText = pageProperties["Comment"].rich_text;
-          if (richText.length > 0) {
-            commentText = richText[0].plain_text;
-          }
-        }
-
-        // No comment text found, try other field names
-        if (!commentText) {
-          for (const key of Object.keys(pageProperties)) {
-            if (
-              key !== replyFieldName &&
-              pageProperties[key].type === "rich_text"
-            ) {
-              const richText = pageProperties[key].rich_text;
-              if (richText && richText.length > 0) {
-                commentText = richText[0].plain_text;
-                console.log(`Found comment text in field: ${key}`);
-                break;
-              }
-            }
-          }
-        }
-
-        // Try to find username
-        if (
-          pageProperties["Username"] &&
-          pageProperties["Username"].rich_text
-        ) {
-          const richText = pageProperties["Username"].rich_text;
-          if (richText.length > 0) {
-            username = richText[0].plain_text;
-          }
-        }
-
-        // Try to find account
-        if (pageProperties["Account"] && pageProperties["Account"].rich_text) {
-          const richText = pageProperties["Account"].rich_text;
-          if (richText.length > 0) {
-            account = richText[0].plain_text;
-          }
-        }
-
-        // Try to find created time
-        if (
-          pageProperties["Created time"] &&
-          pageProperties["Created time"].date
-        ) {
-          createdTime = pageProperties["Created time"].date.start;
-        }
-
-        // If we still don't have enough info, skip this entry
-        if (!commentText) {
-          console.log(`Skipping page ${page.id}: no comment text found`);
           continue;
         }
-
-        // If no username, use a placeholder
-        if (!username) {
-          username = "user_" + Math.floor(Math.random() * 1000);
+        
+        // Extract comment information
+        const commentInfo = extractCommentInfo(page.id, pageProperties);
+        
+        // If we found a valid comment, add it to our list
+        if (commentInfo.comment) {
+          unrepliedComments.push(commentInfo);
+        } else {
+          console.log(`Skipping page ${page.id}: no comment text found`);
         }
-
-        // Add to our list of unreplied comments
-        unrepliedComments.push({
-          pageId: page.id,
-          comment: commentText,
-          username,
-          account,
-          createdTime,
-        });
       } catch (error) {
         console.error("Error processing page:", error);
         // Continue with next page
       }
     }
-
-    return unrepliedComments;
+    
+    return {
+      comments: unrepliedComments,
+      nextCursor: response.has_more ? response.next_cursor : null
+    };
   } catch (error: any) {
     console.error("Error in fetchUnrepliedComments:", error);
     throw new Error(
       `Failed to fetch unreplied comments from Notion: ${error.message}`
     );
   }
+}
+
+// Helper function to find the reply field name
+function findReplyFieldName(properties: any): string | null {
+  // First, check for exact matches with our common names
+  for (const name of Object.keys(properties)) {
+    const trimmedName = name.trim();
+    if (
+      trimmedName === "Reply" ||
+      trimmedName === "reply" ||
+      trimmedName === "Generated Reply" ||
+      trimmedName === "Responded" ||
+      trimmedName === "Response"
+    ) {
+      console.log(`Found reply field with exact match: "${name}"`);
+      return name;
+    }
+  }
+
+  // If no exact match, try a more flexible approach
+  for (const name of Object.keys(properties)) {
+    if (
+      name.toLowerCase().includes("reply") ||
+      name.toLowerCase().includes("response") ||
+      name.toLowerCase().includes("responded")
+    ) {
+      console.log(`Found reply field with flexible match: "${name}"`);
+      return name;
+    }
+  }
+
+  // Last check for fields with spaces
+  for (const name of Object.keys(properties)) {
+    if (name === " Reply" || name === " reply") {
+      console.log(`Found reply field with leading space: "${name}"`);
+      return name;
+    }
+  }
+
+  // If we still can't find the field, use a fallback approach
+  const propertyNames = Object.keys(properties);
+  for (const name of propertyNames) {
+    if (
+      name !== "Username" &&
+      name !== "Comment" &&
+      name !== "Account" &&
+      name !== "Created time"
+    ) {
+      console.log(`Using fallback reply field: "${name}"`);
+      return name;
+    }
+  }
+
+  // If we get here, we couldn't find a suitable field
+  console.warn("No recognized reply field found in database.");
+  return null;
+}
+
+// Helper function to check if a comment needs a reply
+function checkIfNeedsReply(properties: any, replyFieldName: string | null): boolean {
+  if (!replyFieldName) {
+    return true; // If we can't find the reply field, assume it needs a reply
+  }
+
+  if (!properties[replyFieldName]) {
+    return true; // If the field doesn't exist in this record, assume it needs a reply
+  }
+
+  const replyProperty = properties[replyFieldName];
+  
+  if (replyProperty.type === "rich_text") {
+    // Consider it unreplied if the rich_text array is empty or undefined
+    return !replyProperty.rich_text || replyProperty.rich_text.length === 0;
+  } else if (replyProperty.type === "title") {
+    // Consider it unreplied if the title array is empty or undefined
+    return !replyProperty.title || replyProperty.title.length === 0;
+  } else {
+    // For other field types, check if the value exists
+    return !replyProperty[replyProperty.type];
+  }
+}
+
+// Helper function to extract comment information from a Notion page
+function extractCommentInfo(pageId: string, properties: any): any {
+  let commentText = "";
+  let username = "";
+  let account = "";
+  let createdTime = "";
+
+  // Try to find the comment text
+  if (properties["Comment"] && properties["Comment"].rich_text) {
+    const richText = properties["Comment"].rich_text;
+    if (richText.length > 0) {
+      commentText = richText[0].plain_text;
+    }
+  }
+
+  // No comment text found, try other field names
+  if (!commentText) {
+    for (const key of Object.keys(properties)) {
+      if (
+        key !== "Reply" && // Skip any reply fields
+        properties[key].type === "rich_text"
+      ) {
+        const richText = properties[key].rich_text;
+        if (richText && richText.length > 0) {
+          commentText = richText[0].plain_text;
+          console.log(`Found comment text in field: ${key}`);
+          break;
+        }
+      }
+    }
+  }
+
+  // Try to find username
+  if (properties["Username"] && properties["Username"].rich_text) {
+    const richText = properties["Username"].rich_text;
+    if (richText.length > 0) {
+      username = richText[0].plain_text;
+    }
+  }
+
+  // Try to find account
+  if (properties["Account"] && properties["Account"].rich_text) {
+    const richText = properties["Account"].rich_text;
+    if (richText.length > 0) {
+      account = richText[0].plain_text;
+    }
+  }
+
+  // Try to find created time
+  if (properties["Created time"] && properties["Created time"].date) {
+    createdTime = properties["Created time"].date.start;
+  }
+
+  // If no username, use a placeholder
+  if (!username) {
+    username = "user_" + Math.floor(Math.random() * 1000);
+  }
+
+  return {
+    pageId,
+    comment: commentText,
+    username,
+    account,
+    createdTime,
+  };
 }
 
 // Update Notion entries with generated replies
