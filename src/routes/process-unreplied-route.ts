@@ -8,7 +8,7 @@ import { generateReplyWithDeepSeek } from "../services/deepseek-service";
 export const processUnrepliedRoute = Router();
 
 // Batch size for processing comments
-const BATCH_SIZE = 25;
+const BATCH_SIZE = 10;
 
 processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
   try {

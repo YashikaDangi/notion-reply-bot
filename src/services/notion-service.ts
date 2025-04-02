@@ -16,7 +16,7 @@ interface CommentsResult {
 
 // Fetch unreplied comments from Notion with pagination support
 export async function fetchUnrepliedComments(
-  batchSize: number = 25,
+  batchSize: number = 10,
   startCursor: string | null = null
 ): Promise<CommentsResult> {
   try {
