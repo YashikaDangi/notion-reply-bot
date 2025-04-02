@@ -7,40 +7,44 @@ import { generateReplyWithDeepSeek } from "../services/deepseek-service";
 
 export const processUnrepliedRoute = Router();
 
-// Batch size for processing comments
-const BATCH_SIZE = 10;
-
 processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
   try {
-    const { maxBatches } = req.body; // Optional: limit total number of batches
-    let totalProcessed = 0;
-    let batchesProcessed = 0;
-    let hasMoreToProcess = true;
-    let lastCursor: string | null = null;
-    const allProcessedReplies: any[] = [];
+    // Get all unreplied comments without limiting them
+    // Use a very large limit to effectively get all unreplied comments
+    const { batchSize = 10 } = req.body;
+    const maxLimit = 1000; // Set a high limit to get as many as possible
 
-    // Process comments in batches until no more found or max batches reached
-    while (hasMoreToProcess && (!maxBatches || batchesProcessed < maxBatches)) {
-      console.log(`Processing batch #${batchesProcessed + 1}${lastCursor ? " (with cursor)" : ""}`);
+    // Fetch unreplied comments from Notion (now with pagination)
+    const unrepliedComments = await fetchUnrepliedComments(maxLimit);
+
+    console.log(`Found ${unrepliedComments.length} unreplied comments`);
+
+    if (unrepliedComments.length === 0) {
+      return res.status(404).json({
+        message: "No unreplied comments found in Notion",
+        hint: "Check that your Reply column exists and that some entries have empty replies",
+      });
+    }
+
+    // Process comments in batches of the specified size
+    const totalBatches = Math.ceil(unrepliedComments.length / batchSize);
+    console.log(`Processing ${unrepliedComments.length} comments in ${totalBatches} batches of ${batchSize}`);
+    
+    const allProcessedReplies = [];
+    const allNotionUpdateResults = [];
+    
+    // Process each batch
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const startIndex = batchIndex * batchSize;
+      const endIndex = Math.min((batchIndex + 1) * batchSize, unrepliedComments.length);
+      const currentBatch = unrepliedComments.slice(startIndex, endIndex);
       
-      // Fetch a batch of unreplied comments
-      const { comments: batchComments, nextCursor } = await fetchUnrepliedComments(BATCH_SIZE, lastCursor);
+      console.log(`Processing batch ${batchIndex + 1}/${totalBatches} with ${currentBatch.length} comments`);
       
-      // Update cursor for next batch
-      lastCursor = nextCursor;
-      
-      // Check if we got any results from Notion (not just unreplied comments)
-      if (nextCursor === null && batchComments.length === 0) {
-        console.log("No more comments found in the database");
-        hasMoreToProcess = false;
-        break;
-      }
-      
-      console.log(`Found ${batchComments.length} unreplied comments in batch #${batchesProcessed + 1}`);
-      
-      // Generate replies for this batch
+      // Generate replies for this batch using DeepSeek
       const batchProcessedReplies = [];
-      for (const comment of batchComments) {
+
+      for (const comment of currentBatch) {
         try {
           // Generate reply with DeepSeek
           const generatedReply = await generateReplyWithDeepSeek(
@@ -64,50 +68,46 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
         }
       }
 
-      // Update Notion with replies from this batch
-      if (batchProcessedReplies.length > 0) {
-        console.log(`Updating Notion with ${batchProcessedReplies.length} replies from batch #${batchesProcessed + 1}`);
-        await updateNotionWithReplies(batchProcessedReplies);
-        
-        // Add processed replies to overall collection
-        allProcessedReplies.push(...batchProcessedReplies);
-        totalProcessed += batchProcessedReplies.length;
-      } else {
-        console.log(`No replies were successfully generated in batch #${batchesProcessed + 1}`);
+      if (batchProcessedReplies.length === 0) {
+        console.warn(`Batch ${batchIndex + 1} failed to generate any replies with DeepSeek AI`);
+        continue; // Skip to the next batch instead of failing the whole process
       }
-      
-      // Increment batch counter
-      batchesProcessed++;
-      
-      // If we received fewer comments than batch size, we've reached the end
-      if (batchComments.length < BATCH_SIZE || !nextCursor) {
-        hasMoreToProcess = false;
+
+      // Update Notion entries with the generated replies for this batch
+      try {
+        const batchNotionUpdateResults = await updateNotionWithReplies(batchProcessedReplies);
+        
+        // Add this batch's results to our overall results
+        allProcessedReplies.push(...batchProcessedReplies);
+        allNotionUpdateResults.push(...batchNotionUpdateResults);
+        
+        console.log(`Successfully updated ${batchProcessedReplies.length} Notion entries in batch ${batchIndex + 1}`);
+      } catch (error: any) {
+        console.error(`Error updating Notion for batch ${batchIndex + 1}:`, error);
       }
     }
 
-    // Return response with summary of all processed batches
-    if (totalProcessed > 0) {
-      return res.status(200).json({
-        success: true,
-        data: {
-          totalBatchesProcessed: batchesProcessed,
-          totalCommentsProcessed: totalProcessed,
-          hasMoreToProcess: hasMoreToProcess,
-          nextCursor: lastCursor,
-          sampleReplies: allProcessedReplies.slice(0, 5).map((reply) => ({
-            username: reply.username,
-            comment: reply.originalComment.substring(0, 50) + (reply.originalComment.length > 50 ? "..." : ""),
-            generatedReply: reply.generatedReply,
-          })),
-        },
-      });
-    } else {
-      return res.status(404).json({
-        message: "No unreplied comments found or all generation attempts failed",
-        batchesChecked: batchesProcessed,
-        hint: "Check that your Reply column exists and that some entries have empty replies",
+    if (allProcessedReplies.length === 0) {
+      return res.status(500).json({
+        error: "Failed to generate any replies with DeepSeek AI across all batches",
       });
     }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalFound: unrepliedComments.length,
+        totalProcessed: allProcessedReplies.length,
+        batchSize,
+        batchesProcessed: totalBatches,
+        replies: allProcessedReplies.map((reply) => ({
+          username: reply.username,
+          comment: reply.originalComment.substring(0, 50) + (reply.originalComment.length > 50 ? '...' : ''), // Truncated for readability
+          generatedReply: reply.generatedReply.substring(0, 50) + (reply.generatedReply.length > 50 ? '...' : ''), // Truncated for readability
+        })),
+        notionUpdateResults: allNotionUpdateResults,
+      },
+    });
   } catch (error: any) {
     console.error("Error in process-unreplied route:", error);
     return res.status(500).json({
