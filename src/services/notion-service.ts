@@ -134,7 +134,7 @@ export async function fetchUnrepliedComments(
     const unrepliedComments: any[] = [];
 
     // Process all pages, checking each one for a reply
-    for (const page of response.results) {
+    for (const page of allResults) {
       try {
         // Cast page to any to access its properties
         const pageAny = page as any;
