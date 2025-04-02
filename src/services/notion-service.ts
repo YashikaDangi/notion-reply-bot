@@ -57,6 +57,18 @@ export async function fetchUnrepliedComments(
     
     console.log(`Retrieved ${response.results.length} comments from Notion`);
     
+    // Even if no unreplied comments found, we should return the cursor
+    // so the caller knows if there are more records to check
+    const nextCursor = response.has_more ? response.next_cursor : null;
+    
+    // If no results at all, we're at the end of the database
+    if (response.results.length === 0) {
+      return {
+        comments: [],
+        nextCursor: null // Force null to indicate end of database
+      };
+    }
+    
     // Find the reply field name for each page
     const unrepliedComments: any[] = [];
     
@@ -119,7 +131,7 @@ function findReplyFieldName(properties: any): string | null {
       trimmedName === "Responded" ||
       trimmedName === "Response"
     ) {
-      // console.log(`Found reply field with exact match: "${name}"`);
+      console.log(`Found reply field with exact match: "${name}"`);
       return name;
     }
   }
@@ -131,7 +143,7 @@ function findReplyFieldName(properties: any): string | null {
       name.toLowerCase().includes("response") ||
       name.toLowerCase().includes("responded")
     ) {
-      // console.log(`Found reply field with flexible match: "${name}"`);
+      console.log(`Found reply field with flexible match: "${name}"`);
       return name;
     }
   }
@@ -305,9 +317,9 @@ export async function updateNotionWithReplies(replies: Reply[]): Promise<any> {
           name.toLowerCase().includes("responded")
         ) {
           replyFieldName = name;
-          // console.log(
-          //   `Found reply field with flexible match: "${replyFieldName}"`
-          // );
+          console.log(
+            `Found reply field with flexible match: "${replyFieldName}"`
+          );
           break;
         }
       }
@@ -318,9 +330,9 @@ export async function updateNotionWithReplies(replies: Reply[]): Promise<any> {
       for (const name of propertyNames) {
         if (name === " Reply" || name === " reply") {
           replyFieldName = name;
-          // console.log(
-          //   `Found reply field with leading space: "${replyFieldName}"`
-          // );
+          console.log(
+            `Found reply field with leading space: "${replyFieldName}"`
+          );
           break;
         }
       }
@@ -334,20 +346,20 @@ export async function updateNotionWithReplies(replies: Reply[]): Promise<any> {
       );
     }
 
-    // console.log(`Using reply field: "${replyFieldName}"`);
+    console.log(`Using reply field: "${replyFieldName}"`);
 
     // Get the type of the reply field to handle it correctly
     const replyFieldType = properties[replyFieldName].type;
-    // console.log(`Reply field type: ${replyFieldType}`);
+    console.log(`Reply field type: ${replyFieldType}`);
 
     const results = [];
 
     // Update each Notion page with the generated reply
     for (const reply of replies) {
       try {
-        // console.log(
-        //   `Updating Notion entry for comment by ${reply.username}...`
-        // );
+        console.log(
+          `Updating Notion entry for comment by ${reply.username}...`
+        );
 
         // Create the properties object based on field type
         const updateProperties: any = {};
@@ -396,7 +408,7 @@ export async function updateNotionWithReplies(replies: Reply[]): Promise<any> {
           success: true,
         });
 
-        // console.log(`Successfully updated Notion entry for ${reply.username}`);
+        console.log(`Successfully updated Notion entry for ${reply.username}`);
       } catch (error: any) {
         console.error(
           `Error updating Notion entry for ${reply.username}:`,

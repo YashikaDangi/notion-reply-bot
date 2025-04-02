@@ -29,9 +29,9 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
       // Update cursor for next batch
       lastCursor = nextCursor;
       
-      // Check if we found any unreplied comments
-      if (batchComments.length === 0) {
-        console.log("No more unreplied comments found");
+      // Check if we got any results from Notion (not just unreplied comments)
+      if (nextCursor === null && batchComments.length === 0) {
+        console.log("No more comments found in the database");
         hasMoreToProcess = false;
         break;
       }
@@ -57,7 +57,7 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
             createdTime: comment.createdTime,
           });
 
-          // console.log(`Successfully generated reply for ${comment.username}`);
+          console.log(`Successfully generated reply for ${comment.username}`);
         } catch (error: any) {
           console.error(`Error generating reply for ${comment.username}:`, error);
           // We don't add failed replies here as we can't update Notion with them
@@ -66,7 +66,7 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
 
       // Update Notion with replies from this batch
       if (batchProcessedReplies.length > 0) {
-        // console.log(`Updating Notion with ${batchProcessedReplies.length} replies from batch #${batchesProcessed + 1}`);
+        console.log(`Updating Notion with ${batchProcessedReplies.length} replies from batch #${batchesProcessed + 1}`);
         await updateNotionWithReplies(batchProcessedReplies);
         
         // Add processed replies to overall collection
