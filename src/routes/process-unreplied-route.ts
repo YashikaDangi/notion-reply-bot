@@ -9,10 +9,14 @@ export const processUnrepliedRoute = Router();
 
 processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
   try {
-    // Get all unreplied comments without limiting them
-    // Use a very large limit to effectively get all unreplied comments
-    const { batchSize = 10 } = req.body;
-    const maxLimit = 1000; // Set a high limit to get as many as possible
+    // Get request parameters with defaults
+    const { 
+      batchSize = 10,       // Number of comments per batch
+      maxBatches = Infinity // Maximum number of batches to process (default: all)
+    } = req.body;
+    
+    // Calculate how many comments to fetch based on batchSize and maxBatches
+    const maxLimit = maxBatches !== Infinity ? batchSize * maxBatches : 1000;
 
     // Fetch unreplied comments from Notion (now with pagination)
     const unrepliedComments = await fetchUnrepliedComments(maxLimit);
@@ -27,19 +31,22 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
     }
 
     // Process comments in batches of the specified size
-    const totalBatches = Math.ceil(unrepliedComments.length / batchSize);
-    console.log(`Processing ${unrepliedComments.length} comments in ${totalBatches} batches of ${batchSize}`);
+    const totalBatchesAvailable = Math.ceil(unrepliedComments.length / batchSize);
+    // Limit the number of batches to process based on maxBatches
+    const batchesToProcess = Math.min(totalBatchesAvailable, maxBatches);
+    
+    console.log(`Processing ${unrepliedComments.length} comments in ${batchesToProcess} batches of ${batchSize} (${totalBatchesAvailable} batches available)`);
     
     const allProcessedReplies = [];
     const allNotionUpdateResults = [];
     
     // Process each batch
-    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+    for (let batchIndex = 0; batchIndex < batchesToProcess; batchIndex++) {
       const startIndex = batchIndex * batchSize;
       const endIndex = Math.min((batchIndex + 1) * batchSize, unrepliedComments.length);
       const currentBatch = unrepliedComments.slice(startIndex, endIndex);
       
-      console.log(`Processing batch ${batchIndex + 1}/${totalBatches} with ${currentBatch.length} comments`);
+      console.log(`Processing batch ${batchIndex + 1}/${batchesToProcess} with ${currentBatch.length} comments`);
       
       // Generate replies for this batch using DeepSeek
       const batchProcessedReplies = [];
@@ -99,7 +106,9 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
         totalFound: unrepliedComments.length,
         totalProcessed: allProcessedReplies.length,
         batchSize,
-        batchesProcessed: totalBatches,
+        batchesProcessed: batchesToProcess,
+        totalBatchesAvailable,
+        skippedBatches: totalBatchesAvailable - batchesToProcess,
         replies: allProcessedReplies.map((reply) => ({
           username: reply.username,
           comment: reply.originalComment.substring(0, 50) + (reply.originalComment.length > 50 ? '...' : ''), // Truncated for readability
