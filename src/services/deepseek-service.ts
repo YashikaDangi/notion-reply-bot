@@ -17,7 +17,7 @@ export async function generateReplyWithDeepSeek(
       apiKey: apiKey,
     });
 
-    const systemMessage = `I have instagram accounts and I recieve comments and they have to replied to
+    const userMessage = `I have instagram accounts and I recieve comments and they have to replied to
 This is a comment I have just recieved "${comment}"
 Please generate a reply for this, if they have written a statement agree to their statement in a playful way, if they are asking a question then try to answer it, if it is all emoji then reply in an all emoji fashion that are relevant.
 Make it conversational if you can without being intrusive or clingy, speak like an indian author who is in their late 20s and use gen z conversational slangs.
@@ -27,16 +27,15 @@ Make sure you are not rude and mean to anyone. Always reply with warmth and mild
 The result should contain only the reply, I will be sending this right away without any changes.
 Don't include any "" in the result. and Don't include any capital letters.`;
 
-    // For this implementation, we don't need a separate user message since the comment is already included in the system message
-    const userMessage = "";
-
     const completion = await openai.chat.completions.create({
-      model: "deepseek-chat", 
+      model: "deepseek-chat",
       messages: [
-        { role: "system", content: systemMessage },
+        // Empty system message
+        { role: "system", content: "" },
+        // Former system message content is now the user message
         { role: "user", content: userMessage },
       ],
-      max_tokens: 1024, 
+      max_tokens: 2048,
       temperature: 1.0,
     });
 
