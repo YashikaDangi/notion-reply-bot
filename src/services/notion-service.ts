@@ -132,6 +132,12 @@ export async function fetchUnrepliedComments(
             `Property names: ${Object.keys(pageProperties).join(", ")}`
           );
 
+          // Debug all properties
+          console.log("All page properties:");
+          for (const [key, value] of Object.entries(pageProperties)) {
+            console.log(`Field: ${key}, Type: ${(value as any).type}`);
+          }
+
           // Check if the reply field exists and is empty
           let needsReply = false;
 
@@ -174,15 +180,68 @@ export async function fetchUnrepliedComments(
           let account = "";
           let createdTime = "";
 
-          // Try to find the comment text
-          if (pageProperties["Comment"] && pageProperties["Comment"].rich_text) {
-            const richText = pageProperties["Comment"].rich_text;
-            if (richText.length > 0) {
-              commentText = richText[0].plain_text;
+          // Try to find the comment text - IMPROVED EXTRACTION LOGIC
+          if (pageProperties["Comment"]) {
+            const commentProperty = pageProperties["Comment"];
+            
+            // Handle different types of Comment fields
+            if (commentProperty.type === "rich_text" && commentProperty.rich_text && commentProperty.rich_text.length > 0) {
+              commentText = commentProperty.rich_text[0].plain_text;
+              console.log(`Found comment as rich_text: "${commentText}"`);
+            } 
+            else if (commentProperty.type === "title" && commentProperty.title && commentProperty.title.length > 0) {
+              commentText = commentProperty.title[0].plain_text;
+              console.log(`Found comment as title: "${commentText}"`);
+            }
+            else if (commentProperty.type === "text" && commentProperty.text) {
+              commentText = commentProperty.text.content;
+              console.log(`Found comment as text: "${commentText}"`);
+            }
+            else if (commentProperty.type === "url" && commentProperty.url) {
+              commentText = commentProperty.url;
+              console.log(`Found comment as url: "${commentText}"`);
+            }
+            else if (commentProperty.type === "number" && commentProperty.number !== null && commentProperty.number !== undefined) {
+              commentText = commentProperty.number.toString();
+              console.log(`Found comment as number: "${commentText}"`);
+            }
+            else if (commentProperty.type === "select" && commentProperty.select) {
+              commentText = commentProperty.select.name;
+              console.log(`Found comment as select: "${commentText}"`);
+            }
+            else if (commentProperty.type === "email" && commentProperty.email) {
+              commentText = commentProperty.email;
+              console.log(`Found comment as email: "${commentText}"`);
+            }
+            else if (commentProperty.type === "phone_number" && commentProperty.phone_number) {
+              commentText = commentProperty.phone_number;
+              console.log(`Found comment as phone_number: "${commentText}"`);
+            }
+            else {
+              console.log(`Comment field found but couldn't extract text. Type: ${commentProperty.type}`);
+            }
+          }
+          
+          // If still no comment text, check for column with the actual text
+          // Look at the properties where the name contains the text "Comment" but is not exactly "Comment"
+          if (!commentText) {
+            for (const key of Object.keys(pageProperties)) {
+              if (key.toLowerCase().includes("comment") && key !== "Comment") {
+                const property = pageProperties[key];
+                if (property.type === "rich_text" && property.rich_text && property.rich_text.length > 0) {
+                  commentText = property.rich_text[0].plain_text;
+                  console.log(`Found comment text in field "${key}": "${commentText}"`);
+                  break;
+                } else if (property.type === "title" && property.title && property.title.length > 0) {
+                  commentText = property.title[0].plain_text;
+                  console.log(`Found comment text in title field "${key}": "${commentText}"`);
+                  break;
+                }
+              }
             }
           }
 
-          // No comment text found, try other field names
+          // No comment text found, try all other rich_text fields as a last resort
           if (!commentText) {
             for (const key of Object.keys(pageProperties)) {
               if (
@@ -192,7 +251,7 @@ export async function fetchUnrepliedComments(
                 const richText = pageProperties[key].rich_text;
                 if (richText && richText.length > 0) {
                   commentText = richText[0].plain_text;
-                  console.log(`Found comment text in field: ${key}`);
+                  console.log(`Found comment text in fallback field: ${key}: "${commentText}"`);
                   break;
                 }
               }

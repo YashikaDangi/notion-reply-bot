@@ -29,6 +29,7 @@ processUnrepliedRoute.post("/", async (req: Request, res: Response) => {
 
     for (const comment of unrepliedComments) {
       try {
+        console.log(comment,"COMMENT before generatereplywithclaude function")
         // Generate reply with DeepSeek
         const generatedReply = await generateReplyWithDeepSeek(
           comment.comment,
