@@ -24,7 +24,7 @@ export async function fetchUnrepliedComments(
     const notion = await createNotionClient();
 
     // First, get the database to understand its structure
-    console.log("Retrieving database structure...");
+    // console.log("Retrieving database structure...");
     const database = await notion.databases.retrieve({
       database_id: databaseId,
     });
@@ -32,7 +32,7 @@ export async function fetchUnrepliedComments(
     // Identify field names in the database
     const properties = (database as any).properties;
     const propertyNames = Object.keys(properties);
-    console.log("Available fields in database:", propertyNames);
+    // console.log("Available fields in database:", propertyNames);
 
     // Find the reply field name (with trimming to handle extra spaces)
     let replyFieldName = null;
@@ -42,13 +42,10 @@ export async function fetchUnrepliedComments(
       const trimmedName = name.trim();
       if (
         trimmedName === "Reply" ||
-        trimmedName === "reply" ||
-        trimmedName === "Generated Reply" ||
-        trimmedName === "Responded" ||
-        trimmedName === "Response"
+        trimmedName === "reply" 
       ) {
         replyFieldName = name; // Use the original name with possible spaces
-        console.log(`Found reply field with exact match: "${replyFieldName}"`);
+        // console.log(`Found reply field with exact match: "${replyFieldName}"`);
         break;
       }
     }
@@ -96,7 +93,7 @@ export async function fetchUnrepliedComments(
     
     // Continue querying until we have enough unreplied comments or there are no more pages
     while (hasMore && unrepliedComments.length < limit) {
-      console.log(`Querying Notion with${startCursor ? ' cursor: ' + startCursor : 'out cursor'}`);
+      // console.log(`Querying Notion with${startCursor ? ' cursor: ' + startCursor : 'out cursor'}`);
       
       // Query with pagination
       const queryOptions: any = {
@@ -111,9 +108,9 @@ export async function fetchUnrepliedComments(
 
       const response = await notion.databases.query(queryOptions);
       
-      console.log(
-        `Retrieved ${response.results.length} comments from Notion (page)`
-      );
+      // console.log(
+      //   `Retrieved ${response.results.length} comments from Notion (page)`
+      // );
       
       // Update pagination info for next iteration
       hasMore = response.has_more;
@@ -127,33 +124,33 @@ export async function fetchUnrepliedComments(
           const pageProperties = pageAny.properties;
 
           // For debug
-          console.log(`Page ID: ${page.id}`);
-          console.log(
-            `Property names: ${Object.keys(pageProperties).join(", ")}`
-          );
+          // console.log(`Page ID: ${page.id}`);
+          // console.log(
+          //   `Property names: ${Object.keys(pageProperties).join(", ")}`
+          // );
 
           // Debug all properties
-          console.log("All page properties:");
-          for (const [key, value] of Object.entries(pageProperties)) {
-            console.log(`Field: ${key}, Type: ${(value as any).type}`);
-          }
+          // console.log("All page properties:");
+          // for (const [key, value] of Object.entries(pageProperties)) {
+          //   console.log(`Field: ${key}, Type: ${(value as any).type}`);
+          // }
 
           // Check if the reply field exists and is empty
           let needsReply = false;
 
           if (replyFieldName && pageProperties[replyFieldName]) {
             const replyProperty = pageProperties[replyFieldName];
-            console.log(`Reply field type: ${replyProperty.type}`);
+            // console.log(`Reply field type: ${replyProperty.type}`);
 
             if (replyProperty.type === "rich_text") {
               // Consider it unreplied if the rich_text array is empty or undefined
               needsReply =
                 !replyProperty.rich_text || replyProperty.rich_text.length === 0;
-              console.log(
-                `Rich text array length: ${
-                  replyProperty.rich_text ? replyProperty.rich_text.length : 0
-                }`
-              );
+              // console.log(
+              //   `Rich text array length: ${
+              //     replyProperty.rich_text ? replyProperty.rich_text.length : 0
+              //   }`
+              // );
             } else if (replyProperty.type === "title") {
               // Consider it unreplied if the title array is empty or undefined
               needsReply =
@@ -168,7 +165,7 @@ export async function fetchUnrepliedComments(
             console.log(`Reply field not found in page properties`);
           }
 
-          console.log(`Needs reply: ${needsReply}`);
+          // console.log(`Needs reply: ${needsReply}`);
 
           if (!needsReply) {
             continue; // Skip this comment as it already has a reply
@@ -187,35 +184,35 @@ export async function fetchUnrepliedComments(
             // Handle different types of Comment fields
             if (commentProperty.type === "rich_text" && commentProperty.rich_text && commentProperty.rich_text.length > 0) {
               commentText = commentProperty.rich_text[0].plain_text;
-              console.log(`Found comment as rich_text: "${commentText}"`);
+              // console.log(`Found comment as rich_text: "${commentText}"`);
             } 
             else if (commentProperty.type === "title" && commentProperty.title && commentProperty.title.length > 0) {
               commentText = commentProperty.title[0].plain_text;
-              console.log(`Found comment as title: "${commentText}"`);
+              // console.log(`Found comment as title: "${commentText}"`);
             }
             else if (commentProperty.type === "text" && commentProperty.text) {
               commentText = commentProperty.text.content;
-              console.log(`Found comment as text: "${commentText}"`);
+              // console.log(`Found comment as text: "${commentText}"`);
             }
             else if (commentProperty.type === "url" && commentProperty.url) {
               commentText = commentProperty.url;
-              console.log(`Found comment as url: "${commentText}"`);
+              // console.log(`Found comment as url: "${commentText}"`);
             }
             else if (commentProperty.type === "number" && commentProperty.number !== null && commentProperty.number !== undefined) {
               commentText = commentProperty.number.toString();
-              console.log(`Found comment as number: "${commentText}"`);
+              // console.log(`Found comment as number: "${commentText}"`);
             }
             else if (commentProperty.type === "select" && commentProperty.select) {
               commentText = commentProperty.select.name;
-              console.log(`Found comment as select: "${commentText}"`);
+              // console.log(`Found comment as select: "${commentText}"`);
             }
             else if (commentProperty.type === "email" && commentProperty.email) {
               commentText = commentProperty.email;
-              console.log(`Found comment as email: "${commentText}"`);
+              // console.log(`Found comment as email: "${commentText}"`);
             }
             else if (commentProperty.type === "phone_number" && commentProperty.phone_number) {
               commentText = commentProperty.phone_number;
-              console.log(`Found comment as phone_number: "${commentText}"`);
+              // console.log(`Found comment as phone_number: "${commentText}"`);
             }
             else {
               console.log(`Comment field found but couldn't extract text. Type: ${commentProperty.type}`);
@@ -230,11 +227,11 @@ export async function fetchUnrepliedComments(
                 const property = pageProperties[key];
                 if (property.type === "rich_text" && property.rich_text && property.rich_text.length > 0) {
                   commentText = property.rich_text[0].plain_text;
-                  console.log(`Found comment text in field "${key}": "${commentText}"`);
+                  // console.log(`Found comment text in field "${key}": "${commentText}"`);
                   break;
                 } else if (property.type === "title" && property.title && property.title.length > 0) {
                   commentText = property.title[0].plain_text;
-                  console.log(`Found comment text in title field "${key}": "${commentText}"`);
+                  // console.log(`Found comment text in title field "${key}": "${commentText}"`);
                   break;
                 }
               }
